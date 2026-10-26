@@ -11,7 +11,11 @@ wants you, so nothing sits finished for twenty minutes while you're busy somewhe
 | red | waiting on a permission or a question |
 | flashing | it's been wanting you for 5 minutes |
 
-**Press** a key to jump to that session (the exact terminal tab or editor window).
+Each key carries the agent's mark (Claude, Codex, Cursor, Gemini; others show their name).
+
+**Press** a key to jump to that session: the exact session in Claude's and Codex's desktop apps,
+the exact pane in cmux, Terminal and iTerm, the project's window in editors, and otherwise the
+app itself (Ghostty, Grok Bot, …), where you click the rest of the way.
 **Hold** a key to forget a session that died without saying so.
 
 No Elgato app, no account, no server. Tally is one small menu bar app (about 11 MB, 0% CPU when

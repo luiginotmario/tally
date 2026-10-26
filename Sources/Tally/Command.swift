@@ -33,7 +33,7 @@ enum Command {
     let payload = inline.map { Data($0.utf8) } ?? FileHandle.standardInput.readDataToEndOfFile()
     if let reply = Hook.reply(to: payload) { print(reply) }
     guard var signal = Hook.signal(from: payload, agent: agent) else { return }
-    signal.focus = .ofCaller(agent: signal.agent, cwd: signal.cwd)
+    signal.origin = .ofCaller(agent: signal.agent, session: signal.session)
     Inbox.send(signal)
   }
 
@@ -41,13 +41,10 @@ enum Command {
     let environment = ProcessInfo.processInfo.environment
     let agent = agent ?? environment["TALLY_AGENT"] ?? "agent"
     let cwd = FileManager.default.currentDirectoryPath
-    let focus = Focus.ofCaller(agent: agent, cwd: cwd)
-    // Without a session id from the agent, the terminal tab (or the folder) is the session.
-    let session = environment["TALLY_SESSION"] ?? {
-      if case .terminal(_, let tty) = focus { return tty }
-      return cwd
-    }()
-    Inbox.send(Signal(session: "\(agent):\(session)", agent: agent, status: status, cwd: cwd, focus: focus))
+    // Without a session id from the agent, its terminal pane (or the folder) is the session.
+    let origin = Origin.ofCaller(agent: agent, session: "")
+    let session = environment["TALLY_SESSION"] ?? origin.pane ?? origin.tty ?? cwd
+    Inbox.send(Signal(session: "\(agent):\(session)", agent: agent, status: status, cwd: cwd, origin: origin))
   }
 
   private static func connect() {
@@ -72,6 +69,8 @@ enum Command {
       ("done-flash", KeyFace(status: .done, title: "tuvian-os", agent: "claude", light: 0)),
       ("waiting", KeyFace(status: .waiting, title: "expert-capture", agent: "cursor", light: 1)),
       ("waiting-flash", KeyFace(status: .waiting, title: "expert-capture", agent: "cursor", light: 0)),
+      ("gemini", KeyFace(status: .working, title: "loupe", agent: "gemini", light: 0)),
+      ("grok", KeyFace(status: .done, title: "carry", agent: "grok", light: 1)),
     ]
     for (name, face) in faces {
       let png = Pixels.encode(face.pixels(side: side), side: side, as: .png)

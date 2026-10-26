@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import TallyKit
 
-/// Ties the board of sessions to the deck: paints keys, turns presses into focus, keeps the clocks.
+/// Ties the board of sessions to the deck: paints keys, turns presses into jumps, keeps the clocks.
 ///
 /// Idle cost is nothing: it only wakes for a signal, a key press, or the moment a key is due to
 /// start flashing, and the flash timer exists only while something is overdue.
@@ -64,7 +64,7 @@ final class Desk {
     if Date.now.timeIntervalSince(start) >= Self.longPress {
       paint(board.dismiss(key: key))
     } else if let session = board.acknowledge(key: key, at: .now) {
-      session.focus?.bringToFront()
+      session.bringToFront()
       paint([key])
     }
     settled()

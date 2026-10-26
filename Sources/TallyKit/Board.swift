@@ -14,7 +14,9 @@ public struct Board: Sendable {
     public var since: Date
     /// Set when you pressed the key, so a waiting key stops nagging.
     public var seen: Bool
-    public var focus: Focus?
+    public var origin: Origin?
+    /// Where the agent is working.
+    public var cwd: String
   }
 
   /// How long a key may want you before it starts flashing.
@@ -39,13 +41,13 @@ public struct Board: Sendable {
 
     var session = sessions[signal.session]
       ?? Session(id: signal.session, agent: signal.agent, title: signal.title,
-                 status: signal.status, since: now, seen: false, focus: signal.focus)
+                 status: signal.status, since: now, seen: false, origin: signal.origin, cwd: signal.cwd)
     if session.status != signal.status {
       session.status = signal.status
       session.since = now
       session.seen = false
     }
-    session.focus = signal.focus ?? session.focus
+    session.origin = signal.origin ?? session.origin
     let changed = sessions[signal.session] != session
     sessions[signal.session] = session
 

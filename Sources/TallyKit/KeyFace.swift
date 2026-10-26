@@ -91,11 +91,18 @@ public struct KeyFace: Equatable, Sendable {
     context.fill(CGRect(x: 0, y: 0, width: side, height: side))
     guard status != nil else { return }
 
-    // Top row: lamp, then the agent's name.
+    // Top row: the agent's mark (or its name, for agents without one) and, on a dark key, the lamp.
     let topLine = side - inset - 5 * unit
-    var labelX = inset
+    let markSize = 15 * unit
+    if let mark = AgentMark.image(for: agent.lowercased()) {
+      draw(mark, in: CGRect(x: inset, y: side - inset - markSize, width: markSize, height: markSize),
+           color: palette.agent, context: context)
+    } else {
+      let label = text(agent.lowercased(), size: 9 * unit, weight: .medium, color: palette.agent)
+      draw(label, at: CGPoint(x: inset, y: topLine), width: side - 2 * inset - 10 * unit, in: context)
+    }
     if let lamp = palette.lamp {
-      let dot = CGRect(x: inset, y: topLine - 0.5 * unit, width: 6 * unit, height: 6 * unit)
+      let dot = CGRect(x: side - inset - 6 * unit, y: side - inset - 6 * unit - 3.5 * unit, width: 6 * unit, height: 6 * unit)
       if lamp.filled {
         context.setFillColor(lamp.color)
         context.fillEllipse(in: dot)
@@ -104,10 +111,7 @@ public struct KeyFace: Equatable, Sendable {
         context.setLineWidth(1.25 * unit)
         context.strokeEllipse(in: dot.insetBy(dx: 0.625 * unit, dy: 0.625 * unit))
       }
-      labelX += 10 * unit
     }
-    let label = text(agent.lowercased(), size: 9 * unit, weight: .medium, color: palette.agent)
-    draw(label, at: CGPoint(x: labelX, y: topLine), width: side - labelX - inset, in: context)
 
     // Bottom: the project name, on up to two lines.
     let name = text(title, size: 14 * unit, weight: .semibold, color: palette.title)
@@ -115,6 +119,21 @@ public struct KeyFace: Equatable, Sendable {
       draw(titleLine, at: CGPoint(x: inset, y: inset + 1 * unit + CGFloat(index) * 15 * unit),
            width: side - 2 * inset, in: context)
     }
+  }
+
+  /// Draws a mark as a silhouette in one colour.
+  private func draw(_ mark: NSImage, in rect: CGRect, color: CGColor, context: CGContext) {
+    context.saveGState()
+    context.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    mark.draw(in: rect)
+    NSGraphicsContext.restoreGraphicsState()
+    context.setBlendMode(.sourceIn)
+    context.setFillColor(color)
+    context.fill(rect)
+    context.endTransparencyLayer()
+    context.restoreGState()
   }
 
   private func text(_ string: String, size: CGFloat, weight: NSFont.Weight, color: CGColor) -> NSAttributedString {

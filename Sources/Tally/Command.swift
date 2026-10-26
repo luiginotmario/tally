@@ -87,3 +87,4 @@ enum Command {
     arguments.firstIndex(of: flag).flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
   }
 }
+

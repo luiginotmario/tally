@@ -11,22 +11,28 @@ public struct KeyFace: Hashable, Sendable {
   public var status: Status?
   public var title: String
   public var agent: String
-  /// How far the lamp is on, 0...1. Drives the light-up ramp and the overdue flash.
+  /// How far the lamp is on, 0...1. Drives the flash.
   public var light: Double
+  /// Which frame of the working ping, 0..<`KeyFace.frames`.
+  public var phase: Int
+
+  /// Frames in one loop of the working ping.
+  public static let frames = 12
 
   public static let blank = KeyFace(status: nil, title: "", agent: "", light: 0)
 
-  public init(status: Status?, title: String, agent: String, light: Double) {
+  public init(status: Status?, title: String, agent: String, light: Double, phase: Int = 0) {
     self.status = status
     self.title = title
     self.agent = agent
     self.light = light
+    self.phase = status == .working ? phase % Self.frames : 0
   }
 
-  public init(_ session: Board.Session?, light: Double = 1) {
+  public init(_ session: Board.Session?, light: Double = 1, phase: Int = 0) {
     guard let session, session.status != .closed else { self = .blank; return }
     self.init(status: session.status, title: session.title, agent: session.agent,
-              light: session.status.wantsYou ? light : 0)
+              light: session.status.wantsYou ? light : 0, phase: phase)
   }
 
   /// Draws the face upright, `side` pixels square, as RGBA rows from the top.
@@ -104,7 +110,9 @@ public struct KeyFace: Hashable, Sendable {
       let label = text(agent.lowercased(), size: 9 * unit, weight: .medium, color: palette.agent)
       draw(label, at: CGPoint(x: inset, y: topLine), width: side - 2 * inset - 10 * unit, in: context)
     }
-    if let lamp = palette.lamp {
+    if status == .working {
+      drawPing(in: context, side: side, unit: unit, inset: inset, color: palette.title)
+    } else if let lamp = palette.lamp {
       let dot = CGRect(x: side - inset - 6 * unit, y: side - inset - 6 * unit - 3.5 * unit, width: 6 * unit, height: 6 * unit)
       if lamp.filled {
         context.setFillColor(lamp.color)
@@ -139,6 +147,20 @@ public struct KeyFace: Hashable, Sendable {
     }
     context.endTransparencyLayer()
     context.restoreGState()
+  }
+
+  /// The working ping: a steady dot with a ring that keeps spreading out of it and fading,
+  /// fast at first and settling (an ease-out), the way a ripple does.
+  private func drawPing(in context: CGContext, side: CGFloat, unit: CGFloat, inset: CGFloat, color: CGColor) {
+    let t = Double(phase) / Double(Self.frames)
+    let center = CGPoint(x: side - inset - 3 * unit, y: side - inset - 6.5 * unit)
+    let dot = 2.6 * unit
+    context.setFillColor(color)
+    context.fillEllipse(in: CGRect(x: center.x - dot, y: center.y - dot, width: 2 * dot, height: 2 * dot))
+    let ring = 3 * unit + 6 * unit * (1 - pow(1 - t, 3))
+    context.setStrokeColor(color.copy(alpha: 0.6 * (1 - t)) ?? color)
+    context.setLineWidth(1.2 * unit)
+    context.strokeEllipse(in: CGRect(x: center.x - ring, y: center.y - ring, width: 2 * ring, height: 2 * ring))
   }
 
   private func text(_ string: String, size: CGFloat, weight: NSFont.Weight, color: CGColor) -> NSAttributedString {

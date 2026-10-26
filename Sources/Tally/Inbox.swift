@@ -7,15 +7,16 @@ import TallyKit
 /// Each `tally` call sends one datagram and exits, and the app sleeps until one arrives:
 /// no port, no polling, nothing leaves the Mac.
 final class Inbox {
-  static let path = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appending(path: "Tally/inbox.sock").path
+  /// Tally's folder in Application Support, home to the socket and the optional scene picture.
+  static let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    .appending(path: "Tally")
+  static let path = folder.appending(path: "inbox.sock").path
 
   private let socket: Int32
   private let source: DispatchSourceRead
 
   init?(onSignal: @escaping (Signal) -> Void) {
-    try? FileManager.default.createDirectory(
-      atPath: (Self.path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+    try? FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
     unlink(Self.path)
 
     let socket = Darwin.socket(AF_UNIX, SOCK_DGRAM, 0)

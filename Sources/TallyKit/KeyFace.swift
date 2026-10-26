@@ -18,6 +18,11 @@ public struct KeyFace: Hashable, Sendable {
 
   /// The wave of light that spreads across the deck when an agent starts wanting you.
   public var ripple: Ripple?
+  /// Which part of the deck's scene this key shows, when there is a scene.
+  public var sceneKey: Int?
+
+  /// A key plus the gap to the next one, in key widths.
+  static let pitch = 1.35
 
   /// Frames in one loop of the working ping.
   public static let frames = 12
@@ -58,7 +63,7 @@ public struct KeyFace: Hashable, Sendable {
   }
 
   /// Draws the face upright, `side` pixels square, as RGBA rows from the top.
-  public func pixels(side: Int) -> [UInt8] {
+  public func pixels(side: Int, scene: Scene? = nil) -> [UInt8] {
     var buffer = [UInt8](repeating: 0, count: side * side * 4)
     buffer.withUnsafeMutableBytes { bytes in
       guard let context = CGContext(
@@ -66,7 +71,7 @@ public struct KeyFace: Hashable, Sendable {
         bytesPerRow: side * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
       ) else { return }
-      draw(in: context, side: CGFloat(side))
+      draw(in: context, side: CGFloat(side), scene: sceneKey == nil ? nil : scene)
     }
     return buffer
   }
@@ -110,7 +115,7 @@ public struct KeyFace: Hashable, Sendable {
     }
   }
 
-  private func draw(in context: CGContext, side: CGFloat) {
+  private func draw(in context: CGContext, side: CGFloat, scene: Scene?) {
     let palette = palette
     let unit = side / 72                       // everything is laid out on a 72-point key
     let inset = 7 * unit
@@ -119,15 +124,32 @@ public struct KeyFace: Hashable, Sendable {
     context.setFillColor(CGColor(gray: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: side, height: side))
     defer { if let ripple { drawRipple(ripple, in: context, side: side) } }
-    guard let status else { return }
+    let card = CGPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 2 * unit, dy: 2 * unit),
+                      cornerWidth: 11 * unit, cornerHeight: 11 * unit, transform: nil)
+    guard let status else {
+      // An empty key is just its window onto the scene.
+      if let scene, let sceneKey {
+        context.saveGState()
+        context.addPath(card)
+        context.clip()
+        scene.draw(key: sceneKey, in: context, side: side)
+        context.restoreGState()
+      }
+      return
+    }
     context.saveGState()
-    context.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 2 * unit, dy: 2 * unit),
-                           cornerWidth: 11 * unit, cornerHeight: 11 * unit, transform: nil))
+    context.addPath(card)
     context.clip()
     context.setFillColor(palette.background)
     context.fill(CGRect(x: 0, y: 0, width: side, height: side))
     if !status.wantsYou || light < 0.5 {
-      drawGradient(in: context, side: side, strength: status == .idle ? 0.55 : 1)
+      let strength = status == .idle ? 0.55 : 1
+      if let scene, let sceneKey {
+        scene.draw(key: sceneKey, in: context, side: side)
+        drawShade(in: context, side: side, strength: strength)
+      } else {
+        drawGradient(in: context, side: side, strength: strength)
+      }
     }
     context.restoreGState()
 
@@ -186,7 +208,7 @@ public struct KeyFace: Hashable, Sendable {
   /// This key's slice of the wave. Each key draws the ring around the same point on the deck,
   /// a key pitch apart, so the wave reads as one ring crossing the gaps between keys.
   private func drawRipple(_ ripple: Ripple, in context: CGContext, side: CGFloat) {
-    let pitch = side * 1.35                    // a key plus the gap to the next one
+    let pitch = side * Self.pitch
     let center = CGPoint(x: side / 2 + CGFloat(ripple.columns) * pitch, y: side / 2 - CGFloat(ripple.rows) * pitch)
     let t = Double(ripple.frame) / Double(Ripple.frames - 1)
     let radius = (0.4 + 3 * (1 - pow(1 - t, 2))) * pitch        // quick to leave, slow to settle
@@ -200,6 +222,15 @@ public struct KeyFace: Hashable, Sendable {
     context.drawRadialGradient(gradient, startCenter: center, startRadius: max(0, radius - width),
                                endCenter: center, endRadius: radius + width, options: [])
     context.restoreGState()
+  }
+
+  /// Darkens a session's slice of the scene toward the bottom, where its name sits, and more
+  /// when it's idle, so the text reads and working keys stand out.
+  private func drawShade(in context: CGContext, side: CGFloat, strength: Double) {
+    let dim = 1 - strength                   // idle keys sit further back
+    let colors: [CGColor] = [0.2 + 0.5 * dim, 0.72 + 0.2 * dim].map { (alpha: Double) in CGColor(gray: 0, alpha: alpha) }
+    let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors as CFArray, locations: [0, 1])!
+    context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: side), end: .zero, options: [])
   }
 
   /// A dark key wears its agent's colour: a deep gradient of it, lit from the top. Idle keys

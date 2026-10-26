@@ -14,6 +14,8 @@ final class Desk {
   /// Called whenever what wants you may have changed, for the menu bar.
   var onChange: () -> Void = {}
 
+  /// A picture across the deck, if one's been put at `Tally/scene.png` (or .jpg).
+  private var scene: Scene?
   private var painted: [KeyFace] = []
   /// Encoded images by face, so animating is just resending bytes.
   private var frames: [KeyFace: [UInt8]] = [:]
@@ -34,6 +36,9 @@ final class Desk {
       deck.setBrightness(Self.brightness)
       painted = Array(repeating: .blank, count: model.keyCount)
       frames = [:]
+      scene = ["scene.png", "scene.jpg"].lazy
+        .compactMap { Scene(contentsOf: Inbox.folder.appending(path: $0), columns: model.columns, rows: model.rows) }
+        .first
       board.resize(to: model.keyCount)
       paint(board.keys.indices)
     }
@@ -101,6 +106,7 @@ final class Desk {
       // The key the wave starts from stays lit until the wave is gone, then starts flashing.
       let lit = flashLit || ripple?.key == key
       var face = KeyFace(board.session(onKey: key), light: lit ? 1 : 0, phase: tick)
+      if scene != nil { face.sceneKey = key }
       if let wave = ripple {
         face.ripple = KeyFace.Ripple(columns: wave.key % model.columns - key % model.columns,
                                      rows: wave.key / model.columns - key / model.columns,
@@ -108,7 +114,7 @@ final class Desk {
       }
       guard face != painted[key] else { continue }
       if frames.count > 512 { frames = [:] }
-      let image = frames[face] ?? model.encode(face.pixels(side: model.side))
+      let image = frames[face] ?? model.encode(face.pixels(side: model.side, scene: scene))
       frames[face] = image
       painted[key] = face
       deck.show(image, onKey: key)

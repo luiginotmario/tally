@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 import TallyKit
 
-/// The menu bar presence: a small lamp that fills when an agent wants you, and a short menu.
+/// The menu bar presence: four little keys that light when an agent wants you, and a short menu.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private let desk = Desk()
   private var inbox: Inbox?
@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
     if others.contains(where: { $0 != .current }) { NSApp.terminate(nil); return }
 
+    // It has no windows, which macOS reads as safe to quit when idle; the deck needs it alive.
+    ProcessInfo.processInfo.disableAutomaticTermination("Driving the Stream Deck")
     inbox = Inbox { [desk] in desk.receive($0) }
     desk.onChange = { [unowned self] in refreshIcon() }
 
@@ -25,6 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       UserDefaults.standard.set(true, forKey: "launched")
       try? SMAppService.mainApp.register()
     }
+  }
+
+  /// Opening the app again (from Finder or Spotlight) shows its menu, since there's no window to show.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    item.button?.performClick(nil)
+    return false
   }
 
   func applicationWillTerminate(_ notification: Notification) {

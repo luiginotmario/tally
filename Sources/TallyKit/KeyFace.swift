@@ -93,9 +93,20 @@ public struct KeyFace: Hashable, Sendable {
     let unit = side / 72                       // everything is laid out on a 72-point key
     let inset = 7 * unit
 
+    // Black around a rounded card, so each key reads as a tile inside its bezel.
+    context.setFillColor(CGColor(gray: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+    guard let status else { return }
+    context.saveGState()
+    context.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 2 * unit, dy: 2 * unit),
+                           cornerWidth: 11 * unit, cornerHeight: 11 * unit, transform: nil))
+    context.clip()
     context.setFillColor(palette.background)
     context.fill(CGRect(x: 0, y: 0, width: side, height: side))
-    guard status != nil else { return }
+    if !status.wantsYou || light < 0.5 {
+      drawGradient(in: context, side: side, strength: status == .idle ? 0.55 : 1)
+    }
+    context.restoreGState()
 
     // Top row: the agent's mark (or its name, for agents without one) and, on a dark key, the lamp.
     let topLine = side - inset - 5 * unit
@@ -147,6 +158,18 @@ public struct KeyFace: Hashable, Sendable {
     }
     context.endTransparencyLayer()
     context.restoreGState()
+  }
+
+  /// A dark key wears its agent's colour: a deep gradient of it, lit from the top. Idle keys
+  /// get a dimmer one, so the working ones stand out.
+  private func drawGradient(in context: CGContext, side: CGFloat, strength: Double) {
+    let accent = AgentMark.accent(for: agent.lowercased()) ?? (0.62, 0.58, 0.54)
+    func shade(_ level: Double) -> CGColor {
+      CGColor(srgbRed: accent.r * level * strength, green: accent.g * level * strength, blue: accent.b * level * strength, alpha: 1)
+    }
+    let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                              colors: [shade(0.34), shade(0.09)] as CFArray, locations: [0, 1])!
+    context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: side), end: .zero, options: [])
   }
 
   /// The working ping: a steady dot with a ring that keeps spreading out of it and fading,

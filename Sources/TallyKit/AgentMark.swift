@@ -39,6 +39,33 @@ public enum AgentMark {
     return brand.color == nil ? .ink(image) : .color(image)
   }
 
+  /// The agent's colour, averaged from its art: Claude's terracotta, and a near-white for
+  /// the brands that are black and white.
+  public static func accent(for agent: String) -> (r: Double, g: Double, b: Double)? {
+    let image: NSImage
+    switch art(for: agent) {
+    case .color(let art): image = art
+    case .ink, nil: return nil
+    }
+    var pixels = [UInt8](repeating: 0, count: 16 * 16 * 4)
+    pixels.withUnsafeMutableBytes { bytes in
+      guard let context = CGContext(data: bytes.baseAddress, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 64,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+      image.draw(in: NSRect(x: 0, y: 0, width: 16, height: 16))
+      NSGraphicsContext.restoreGraphicsState()
+    }
+    var sum = (r: 0.0, g: 0.0, b: 0.0, a: 0.0)
+    for pixel in stride(from: 0, to: pixels.count, by: 4) {
+      sum.r += Double(pixels[pixel]); sum.g += Double(pixels[pixel + 1]); sum.b += Double(pixels[pixel + 2])
+      sum.a += Double(pixels[pixel + 3])
+    }
+    guard sum.a > 0 else { return nil }
+    return (sum.r / sum.a, sum.g / sum.a, sum.b / sum.a)       // premultiplied, so divide by coverage
+  }
+
   /// The agent whose desktop app this is. Some apps reuse another agent's hook format,
   /// so the app the hook ran in has the last word on who's speaking.
   public static func agent(forApp app: String) -> String? {

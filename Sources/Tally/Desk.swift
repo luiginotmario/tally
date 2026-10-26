@@ -1,11 +1,12 @@
-import Foundation
+import AppKit
 import OSLog
 import TallyKit
 
-/// Ties the board of sessions to the deck: paints keys, turns presses into jumps, keeps the clocks.
+/// Ties the board of sessions to the deck: paints keys, turns presses into jumps, and quiets a
+/// key when you go to its app yourself.
 ///
-/// Idle cost is nothing: it only wakes for a signal, a key press, or the moment a key is due to
-/// start flashing, and the flash timer exists only while something is overdue.
+/// Idle cost is nothing: it wakes for a signal, a key press or an app switch, and the flash
+/// timer exists only while some key wants you.
 final class Desk {
   private(set) var board = Board()
   let deck = Deck()
@@ -13,9 +14,9 @@ final class Desk {
   var onChange: () -> Void = {}
 
   private var painted: [KeyFace] = []
-  private var ramps: [Int: Task<Void, Never>] = [:]
+  /// Encoded images by face, so flashing is just resending bytes.
+  private var frames: [KeyFace: [UInt8]] = [:]
   private var pressedAt: [Int: Date] = [:]
-  private var nudge: Timer?
   private var flash: Timer?
   private var flashLit = true
 
@@ -29,20 +30,31 @@ final class Desk {
       deck.reset()
       deck.setBrightness(Self.brightness)
       painted = Array(repeating: .blank, count: model.keyCount)
+      frames = [:]
       board.resize(to: model.keyCount)
       paint(board.keys.indices)
     }
     deck.onDisconnect = { [unowned self] in
-      ramps.values.forEach { $0.cancel() }
       painted = []
       board.resize(to: 0)
     }
     deck.onKey = { [unowned self] key, isDown in press(key, isDown: isDown) }
+
+    NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { [unowned self] notification in
+      let app = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
+      MainActor.assumeIsolated {
+        guard let app else { return }
+        paint(board.acknowledge(app: app, at: .now))
+        settled()
+      }
+    }
   }
 
-  /// Sessions that want you and haven't been looked at yet.
+  /// Sessions that want you right now.
   var waitingOnYou: Int {
-    board.sessions.values.count { $0.status.wantsYou && !$0.seen }
+    board.sessions.values.count { $0.status.wantsYou }
   }
 
   func receive(_ signal: Signal) {
@@ -73,65 +85,29 @@ final class Desk {
   // MARK: - Painting
 
   private func paint(_ keys: some Sequence<Int>) {
-    let now = Date.now
-    for key in keys where painted.indices.contains(key) {
-      let session = board.session(onKey: key)
-      let overdue = session.map { board.isOverdue($0, at: now) } ?? false
-      let face = KeyFace(session, light: overdue && !flashLit ? 0 : 1)
-      guard face != painted[key] else { continue }
-
-      ramps[key]?.cancel()
-      let lightingUp = face.status?.wantsYou == true && painted[key].status != face.status
-      if lightingUp { ramp(key, to: face) } else { show(face, onKey: key) }
-    }
-  }
-
-  /// Brings a key's lamp up over a few frames: a steep start and a long tail, like a bulb warming.
-  private func ramp(_ key: Int, to face: KeyFace) {
-    let frames = 6
-    ramps[key] = Task {
-      for frame in 1...frames {
-        guard !Task.isCancelled else { return }
-        var step = face
-        step.light = 1 - pow(1 - Double(frame) / Double(frames), 5)
-        show(step, onKey: key)
-        try? await Task.sleep(for: .milliseconds(50))
-      }
-    }
-  }
-
-  private func show(_ face: KeyFace, onKey key: Int) {
     guard let model = deck.model else { return }
-    painted[key] = face
-    deck.show(model.encode(face.pixels(side: model.side)), onKey: key)
+    for key in keys where painted.indices.contains(key) {
+      let face = KeyFace(board.session(onKey: key), light: flashLit ? 1 : 0)
+      guard face != painted[key] else { continue }
+      if frames.count > 128 { frames = [:] }
+      let image = frames[face] ?? model.encode(face.pixels(side: model.side))
+      frames[face] = image
+      painted[key] = face
+      deck.show(image, onKey: key)
+    }
   }
 
-  // MARK: - Clocks
-
-  /// Re-arms the timers after anything changed, and tells the menu bar.
+  /// Runs the flash only while something wants you, and tells the menu bar.
   private func settled() {
-    let now = Date.now
-    nudge?.invalidate()
-    nudge = board.nextNudge(after: now).map { due in
-      Timer.scheduledTimer(withTimeInterval: due.timeIntervalSince(now) + 0.05, repeats: false) { [unowned self] _ in
-        MainActor.assumeIsolated {
-          paint(board.keys.indices)
-          settled()
-        }
-      }
-    }
-
-    let anyOverdue = board.keys.indices.contains { key in
-      board.session(onKey: key).map { board.isOverdue($0, at: now) } ?? false
-    }
-    if anyOverdue, flash == nil {
-      flash = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [unowned self] _ in
+    let anyWanting = board.keys.indices.contains { board.session(onKey: $0)?.status.wantsYou == true }
+    if anyWanting, flash == nil {
+      flash = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [unowned self] _ in
         MainActor.assumeIsolated {
           flashLit.toggle()
           paint(board.keys.indices)
         }
       }
-    } else if !anyOverdue {
+    } else if !anyWanting {
       flash?.invalidate()
       flash = nil
       flashLit = true

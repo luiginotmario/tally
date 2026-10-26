@@ -6,7 +6,7 @@ import CoreText
 /// The idea is a tally light: a quiet key is dark like a powered-down panel, and a key
 /// that wants you becomes the lamp itself, warm white when an agent is done, red when
 /// it's blocked on you.
-public struct KeyFace: Equatable, Sendable {
+public struct KeyFace: Hashable, Sendable {
   /// `nil` is an unused key.
   public var status: Status?
   public var title: String
@@ -93,11 +93,14 @@ public struct KeyFace: Equatable, Sendable {
 
     // Top row: the agent's mark (or its name, for agents without one) and, on a dark key, the lamp.
     let topLine = side - inset - 5 * unit
-    let markSize = 15 * unit
-    if let mark = AgentMark.image(for: agent.lowercased()) {
-      draw(mark, in: CGRect(x: inset, y: side - inset - markSize, width: markSize, height: markSize),
-           color: palette.agent, context: context)
-    } else {
+    let markSize = 18 * unit
+    let markRect = CGRect(x: inset - 1 * unit, y: side - inset - markSize + 1 * unit, width: markSize, height: markSize)
+    switch AgentMark.art(for: agent.lowercased()) {
+    case .color(let image):
+      draw(image, in: markRect, tint: nil, context: context)
+    case .ink(let image):
+      draw(image, in: markRect.insetBy(dx: 2 * unit, dy: 2 * unit), tint: palette.agent, context: context)
+    case nil:
       let label = text(agent.lowercased(), size: 9 * unit, weight: .medium, color: palette.agent)
       draw(label, at: CGPoint(x: inset, y: topLine), width: side - 2 * inset - 10 * unit, in: context)
     }
@@ -121,17 +124,19 @@ public struct KeyFace: Equatable, Sendable {
     }
   }
 
-  /// Draws a mark as a silhouette in one colour.
-  private func draw(_ mark: NSImage, in rect: CGRect, color: CGColor, context: CGContext) {
+  /// Draws an image, or with a tint, its silhouette in that one colour.
+  private func draw(_ image: NSImage, in rect: CGRect, tint: CGColor?, context: CGContext) {
     context.saveGState()
     context.beginTransparencyLayer(in: rect, auxiliaryInfo: nil)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-    mark.draw(in: rect)
+    image.draw(in: rect)
     NSGraphicsContext.restoreGraphicsState()
-    context.setBlendMode(.sourceIn)
-    context.setFillColor(color)
-    context.fill(rect)
+    if let tint {
+      context.setBlendMode(.sourceIn)
+      context.setFillColor(tint)
+      context.fill(rect)
+    }
     context.endTransparencyLayer()
     context.restoreGState()
   }

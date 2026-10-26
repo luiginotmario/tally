@@ -12,15 +12,10 @@ public struct Board: Sendable {
     public var status: Status
     /// When `status` last changed.
     public var since: Date
-    /// Set when you pressed the key, so a waiting key stops nagging.
-    public var seen: Bool
     public var origin: Origin?
     /// Where the agent is working.
     public var cwd: String
   }
-
-  /// How long a key may want you before it starts flashing.
-  public static let patience: TimeInterval = 5 * 60
 
   public private(set) var sessions: [String: Session] = [:]
   /// One entry per physical key, holding the id of the session it shows.
@@ -41,11 +36,10 @@ public struct Board: Sendable {
 
     var session = sessions[signal.session]
       ?? Session(id: signal.session, agent: signal.agent, title: signal.title,
-                 status: signal.status, since: now, seen: false, origin: signal.origin, cwd: signal.cwd)
+                 status: signal.status, since: now, origin: signal.origin, cwd: signal.cwd)
     if session.status != signal.status {
       session.status = signal.status
       session.since = now
-      session.seen = false
     }
     session.origin = signal.origin ?? session.origin
     let changed = sessions[signal.session] != session
@@ -56,17 +50,28 @@ public struct Board: Sendable {
     return touched
   }
 
-  /// You pressed the key: a finished agent goes quiet, a waiting one stops flashing.
+  /// You pressed the key, so you're on it: the key goes quiet.
   @discardableResult
   public mutating func acknowledge(key: Int, at now: Date) -> Session? {
-    guard var session = session(onKey: key) else { return nil }
-    if session.status == .done {
-      session.status = .idle
-      session.since = now
-    }
-    session.seen = true
-    sessions[session.id] = session
-    return session
+    guard let session = session(onKey: key) else { return nil }
+    quiet(session.id, at: now)
+    return sessions[session.id]
+  }
+
+  /// You switched to an app yourself. If exactly one session there wants you, you're looking at
+  /// it; with several, there's no telling which, so they stay lit until each hears from you.
+  @discardableResult
+  public mutating func acknowledge(app: String, at now: Date) -> Set<Int> {
+    let wanting = sessions.values.filter { $0.status.wantsYou && $0.origin?.app == app }
+    guard wanting.count == 1, let session = wanting.first else { return [] }
+    quiet(session.id, at: now)
+    return keys.firstIndex(of: session.id).map { [$0] } ?? []
+  }
+
+  private mutating func quiet(_ id: String, at now: Date) {
+    guard sessions[id]?.status.wantsYou == true else { return }
+    sessions[id]?.status = .idle
+    sessions[id]?.since = now
   }
 
   /// Forgets a session for good (a long press), for agents that died without saying so.
@@ -80,19 +85,6 @@ public struct Board: Sendable {
   public mutating func resize(to count: Int) {
     keys = Array(keys.prefix(count)) + Array(repeating: nil, count: max(0, count - keys.count))
     for id in queue() { _ = place(id) }
-  }
-
-  public func isOverdue(_ session: Session, at now: Date) -> Bool {
-    session.status.wantsYou && !session.seen && now.timeIntervalSince(session.since) >= Self.patience
-  }
-
-  /// The next moment a key will start flashing, so the app can sleep until then.
-  public func nextNudge(after now: Date) -> Date? {
-    keys.compactMap { $0.flatMap { sessions[$0] } }
-      .filter { $0.status.wantsYou && !$0.seen }
-      .map { $0.since.addingTimeInterval(Self.patience) }
-      .filter { $0 > now }
-      .min()
   }
 
   // MARK: - Key assignment

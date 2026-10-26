@@ -33,7 +33,10 @@ enum Command {
     let payload = inline.map { Data($0.utf8) } ?? FileHandle.standardInput.readDataToEndOfFile()
     if let reply = Hook.reply(to: payload) { print(reply) }
     guard var signal = Hook.signal(from: payload, agent: agent) else { return }
-    signal.origin = .ofCaller(agent: signal.agent, session: signal.session)
+    let origin = Origin.ofCaller(agent: signal.agent, session: signal.session)
+    // Apps built on Cursor's engine (Grok Bot) send Cursor's payload; the app says who it really is.
+    if signal.agent == "cursor", let app = origin.app.flatMap(AgentMark.agent(forApp:)) { signal.agent = app }
+    signal.origin = origin
     Inbox.send(signal)
   }
 
@@ -71,6 +74,7 @@ enum Command {
       ("waiting-flash", KeyFace(status: .waiting, title: "expert-capture", agent: "cursor", light: 0)),
       ("gemini", KeyFace(status: .working, title: "loupe", agent: "gemini", light: 0)),
       ("grok", KeyFace(status: .done, title: "carry", agent: "grok", light: 1)),
+      ("cursor", KeyFace(status: .idle, title: "shed", agent: "cursor", light: 0)),
     ]
     for (name, face) in faces {
       let png = Pixels.encode(face.pixels(side: side), side: side, as: .png)

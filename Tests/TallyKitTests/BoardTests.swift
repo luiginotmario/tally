@@ -43,17 +43,35 @@ struct BoardTests {
     #expect(board.keys == ["a"])
   }
 
-  @Test func `keys start nagging after five minutes, unless you pressed them`() {
+  @Test func `pressing a key quiets it, finished or waiting`() {
     var board = Board(keyCount: 2)
     board.apply(signal("a", .done), at: start)
     board.apply(signal("b", .waiting), at: start)
-    let later = start.addingTimeInterval(Board.patience)
-    #expect(board.nextNudge(after: start) == later)
-    #expect(board.isOverdue(board.session(onKey: 0)!, at: later))
+    board.acknowledge(key: 1, at: start)
+    #expect(board.session(onKey: 1)?.status == .idle)
+    #expect(board.session(onKey: 0)?.status == .done)
+  }
 
-    board.acknowledge(key: 1, at: later)
-    #expect(!board.isOverdue(board.session(onKey: 1)!, at: later))
-    #expect(board.session(onKey: 1)?.status == .waiting)
+  @Test func `switching to an app quiets the one session there that wants you`() {
+    var board = Board(keyCount: 3)
+    var mine = signal("a", .done)
+    mine.origin = Origin(app: "com.mitchellh.ghostty")
+    board.apply(mine, at: start)
+    board.apply(signal("b", .done), at: start)
+    #expect(board.acknowledge(app: "com.mitchellh.ghostty", at: start) == [0])
+    #expect(board.session(onKey: 0)?.status == .idle)
+    #expect(board.session(onKey: 1)?.status == .done)
+  }
+
+  @Test func `with several waiting in one app, switching to it can't tell which you're on`() {
+    var board = Board(keyCount: 2)
+    for id in ["a", "b"] {
+      var waiting = signal(id, .waiting)
+      waiting.origin = Origin(app: "com.anthropic.claudefordesktop")
+      board.apply(waiting, at: start)
+    }
+    #expect(board.acknowledge(app: "com.anthropic.claudefordesktop", at: start).isEmpty)
+    #expect(board.sessions.values.allSatisfy { $0.status == .waiting })
   }
 
   @Test func `pressing a finished key quiets it`() {

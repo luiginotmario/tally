@@ -31,11 +31,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     desk.blank()
   }
 
+  /// Four little keys, like the app icon; the top-right one fills while an agent wants you.
   private func refreshIcon() {
     let wanting = desk.waitingOnYou
-    let image = NSImage(systemSymbolName: wanting > 0 ? "circle.inset.filled" : "circle",
-                        accessibilityDescription: wanting > 0 ? "\(wanting) agents waiting" : "Tally")
-    image?.isTemplate = true
+    let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { _ in
+      for (index, origin) in [(0, 9), (9, 9), (0, 0), (9, 0)].map({ CGPoint(x: $0 + 1, y: $1 + 1) }).enumerated() {
+        let key = NSBezierPath(roundedRect: NSRect(origin: origin, size: NSSize(width: 6, height: 6)).insetBy(dx: 0.5, dy: 0.5),
+                               xRadius: 1.5, yRadius: 1.5)
+        NSColor.black.set()
+        if index == 1 && wanting > 0 { key.fill() } else { key.lineWidth = 1; key.stroke() }
+      }
+      return true
+    }
+    image.isTemplate = true
+    image.accessibilityDescription = wanting > 0 ? "\(wanting) agents waiting" : "Tally"
     item.button?.image = image
   }
 

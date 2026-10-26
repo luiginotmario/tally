@@ -20,6 +20,8 @@ final class Desk {
   private var pressedAt: [Int: Date] = [:]
   private var clock: Timer?
   private var tick = 0
+  /// The wave crossing the deck: which key it started from, when, and its colour.
+  private var ripple: (key: Int, start: Int, status: Status)?
 
   /// Holding a key this long forgets its session instead of jumping to it.
   private static let longPress: TimeInterval = 0.6
@@ -60,7 +62,14 @@ final class Desk {
 
   func receive(_ signal: Signal) {
     log.info("\(signal.agent, privacy: .public) \(signal.title, privacy: .public): \(signal.status.rawValue, privacy: .public)")
-    paint(board.apply(signal, at: .now))
+    let before = board.sessions[signal.session]?.status
+    let touched = board.apply(signal, at: .now)
+    if signal.status.wantsYou, before != signal.status, let key = board.keys.firstIndex(of: signal.session) {
+      ripple = (key, tick, signal.status)
+      paint(board.keys.indices)
+    } else {
+      paint(touched)
+    }
     settled()
   }
 
@@ -87,8 +96,16 @@ final class Desk {
 
   private func paint(_ keys: some Sequence<Int>) {
     guard let model = deck.model else { return }
+    if let wave = ripple, tick - wave.start >= KeyFace.Ripple.frames { ripple = nil }
     for key in keys where painted.indices.contains(key) {
-      let face = KeyFace(board.session(onKey: key), light: flashLit ? 1 : 0, phase: tick)
+      // The key the wave starts from stays lit until the wave is gone, then starts flashing.
+      let lit = flashLit || ripple?.key == key
+      var face = KeyFace(board.session(onKey: key), light: lit ? 1 : 0, phase: tick)
+      if let wave = ripple {
+        face.ripple = KeyFace.Ripple(columns: wave.key % model.columns - key % model.columns,
+                                     rows: wave.key / model.columns - key / model.columns,
+                                     frame: tick - wave.start, status: wave.status)
+      }
       guard face != painted[key] else { continue }
       if frames.count > 512 { frames = [:] }
       let image = frames[face] ?? model.encode(face.pixels(side: model.side))

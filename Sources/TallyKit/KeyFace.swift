@@ -16,8 +16,30 @@ public struct KeyFace: Hashable, Sendable {
   /// Which frame of the working ping, 0..<`KeyFace.frames`.
   public var phase: Int
 
+  /// The wave of light that spreads across the deck when an agent starts wanting you.
+  public var ripple: Ripple?
+
   /// Frames in one loop of the working ping.
   public static let frames = 12
+
+  public struct Ripple: Hashable, Sendable {
+    /// Where the wave started, counted in keys from this one: right and down are positive.
+    public var columns: Int
+    public var rows: Int
+    /// 0..<`Ripple.frames`.
+    public var frame: Int
+    /// Done or waiting: the wave is that lamp's colour.
+    public var status: Status
+
+    public static let frames = 10
+
+    public init(columns: Int, rows: Int, frame: Int, status: Status) {
+      self.columns = columns
+      self.rows = rows
+      self.frame = frame
+      self.status = status
+    }
+  }
 
   public static let blank = KeyFace(status: nil, title: "", agent: "", light: 0)
 
@@ -96,6 +118,7 @@ public struct KeyFace: Hashable, Sendable {
     // Black around a rounded card, so each key reads as a tile inside its bezel.
     context.setFillColor(CGColor(gray: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+    defer { if let ripple { drawRipple(ripple, in: context, side: side) } }
     guard let status else { return }
     context.saveGState()
     context.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side).insetBy(dx: 2 * unit, dy: 2 * unit),
@@ -157,6 +180,25 @@ public struct KeyFace: Hashable, Sendable {
       context.fill(rect)
     }
     context.endTransparencyLayer()
+    context.restoreGState()
+  }
+
+  /// This key's slice of the wave. Each key draws the ring around the same point on the deck,
+  /// a key pitch apart, so the wave reads as one ring crossing the gaps between keys.
+  private func drawRipple(_ ripple: Ripple, in context: CGContext, side: CGFloat) {
+    let pitch = side * 1.35                    // a key plus the gap to the next one
+    let center = CGPoint(x: side / 2 + CGFloat(ripple.columns) * pitch, y: side / 2 - CGFloat(ripple.rows) * pitch)
+    let t = Double(ripple.frame) / Double(Ripple.frames - 1)
+    let radius = (0.4 + 3 * (1 - pow(1 - t, 2))) * pitch        // quick to leave, slow to settle
+    let width = 0.55 * pitch
+    let lamp = ripple.status == .waiting ? Self.red : Self.warm
+    let alpha = 0.7 * (1 - t)
+    let colors: [CGColor] = [0, alpha, 0].map { (level: Double) in CGColor(srgbRed: lamp.r, green: lamp.g, blue: lamp.b, alpha: level) }
+    let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors as CFArray, locations: [0, 0.5, 1])!
+    context.saveGState()
+    context.setBlendMode(.screen)
+    context.drawRadialGradient(gradient, startCenter: center, startRadius: max(0, radius - width),
+                               endCenter: center, endRadius: radius + width, options: [])
     context.restoreGState()
   }
 
